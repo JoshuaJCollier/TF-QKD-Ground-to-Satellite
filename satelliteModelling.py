@@ -103,8 +103,8 @@ class Communication():
         c2n = 0.00594*np.power(omega[:, np.newaxis]/27, 2) * np.power(1e-5*actual_heights, 10) * np.exp(-actual_heights/1000) + \
                     2.7e-16*np.exp(-actual_heights/1500) + \
                     C2n0*np.exp(-actual_heights/100)
-        phase_noise = np.sum(0.033*self.laser.wavenumber**2 * self.rec.dist2sat(self.sat)[:, np.newaxis] * c2n * wind_speed**(5/3), axis=1) * 10**(-8/3)
-        
+        phase_noise = np.sum(0.033*self.laser.wavenumber**2 * self.rec.dist2sat(self.sat)[:, np.newaxis] * c2n * wind_speed**(5/3), axis=1)
+        # this phase noise is frequency independent
         return phase_noise
 #time = 60*5 # time of experimental run (s), 23 minutes is a by eye estimate of usable passover time
 #timesteps = np.linspace(0, t, steps) # array of time-steps, used for calculation (array of time in seconds)
