@@ -12,7 +12,7 @@ import time
 
 # Constants
 earth_radius = 6371e3 # radius of earth (m)
-steps = 100 # no units (fractional time steps) -> the time steps dont seem to have an effect on the system
+steps = 10000 # no units (fractional time steps) -> the time steps dont seem to have an effect on the system
 
 
 def pol2cart(rho, phi):
