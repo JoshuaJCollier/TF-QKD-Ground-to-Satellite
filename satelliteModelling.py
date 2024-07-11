@@ -147,19 +147,19 @@ class Communication():
         if plot_atmos:
             plt.figure(total_figures, figsize=(7,7))
             total_figures += 1
-            plt.plot(actual_heights[10], windspeed[10])
-            plt.plot(actual_heights[10], c2n[10])
-            plt.plot(actual_heights[10], (self.rec.lengthsteps2sat(self.sat, self.no_length_steps))[10])
-            plt.plot(actual_heights[10], (self.rec.lengthsteps2sat(self.sat, self.no_length_steps)*c2n*windspeed**(5/3))[10])
-            plt.plot(actual_heights[99], windspeed[99])
-            plt.plot(actual_heights[99], c2n[99])
-            plt.plot(actual_heights[99], (self.rec.lengthsteps2sat(self.sat, self.no_length_steps))[99])
-            plt.plot(actual_heights[99], (self.rec.lengthsteps2sat(self.sat, self.no_length_steps)*c2n*windspeed**(5/3))[99])
+            plt.plot(actual_heights[int(no_time_steps/10)], windspeed[int(no_time_steps/10)])
+            plt.plot(actual_heights[int(no_time_steps/10)], c2n[int(no_time_steps/10)])
+            plt.plot(actual_heights[int(no_time_steps/10)], (self.rec.lengthsteps2sat(self.sat, self.no_length_steps))[int(no_time_steps/10)])
+            plt.plot(actual_heights[int(no_time_steps/10)], (self.rec.lengthsteps2sat(self.sat, self.no_length_steps)*c2n*windspeed**(5/3))[int(no_time_steps/10)])
+            plt.plot(actual_heights[-1], windspeed[-1])
+            plt.plot(actual_heights[-1], c2n[-1])
+            plt.plot(actual_heights[-1], (self.rec.lengthsteps2sat(self.sat, self.no_length_steps))[-1])
+            plt.plot(actual_heights[-1], (self.rec.lengthsteps2sat(self.sat, self.no_length_steps)*c2n*windspeed**(5/3))[-1])
             
             plt.yscale('log')
             plt.xlabel('Height (m)')
             plt.ylabel('Value')
-            plt.title('Whats happening? Vrms(peak)={:.2f}m/s, Vrms(end)={:.2f}m/s'.format(rms_windspeed[10], rms_windspeed[99]))
+            plt.title('Whats happening? Vrms(peak)={:.2f}m/s, Vrms(end)={:.2f}m/s'.format(rms_windspeed[10], rms_windspeed[-1]))
             plt.legend(['Windspeed (peak)', 'Cn^2 (peak)', 'Length (peak)', 'Kolmogorov comp (peak)', 'Windspeed (end)', 'Cn^2 (end)', 'Length (end)', 'Kolmogorov comp (end)'])
             plt.ylim(1e-22, 1e5)
             plt.xlim(0, 1e5)
@@ -178,21 +178,14 @@ no_q_steps = 1
 steps_array = [no_time_steps, no_freq_steps, no_length_steps, no_q_steps]
 #print("Max array data size: {:.2f}GB".format(no_time_steps*no_length_steps*no_freq_steps*no_q_steps*8/(1024**3)))
 plot_atmos = False
-plot_PSDs = True
+plot_PSDs = False
 
 earth_radius = 6371e3 # radius of earth (m)
 speed_of_light = 2.99792458*1e8 # (m/s)
 refractive_index = 1.00027 # refractive index of the atmosphere, this can probably be changed over distance but also small, will make less than 0.03% diff
-ground_station_seperation = 2000e3 # seperation between Alice and Bob (m)
-sat_LEO_low = Satellite(500e3, 7.5e3, 60*6, no_time_steps) # height, speed, time of satellite passover -> these are all similar to  GRACE-FO
-sat_LEO_high = Satellite(2000e3, 7.0e3, 60*14, no_time_steps) # height, speed, time of satellite passover -> these are all similar to  GRACE-FO
-sat_MEO_low = Satellite(10e6, 3.5e3, 60*30, no_time_steps) # height, speed, time of satellite passover -> these are all similar to  GRACE-FO
-sat_MEO_high = Satellite(20e6, 3.5e3, 60*45, no_time_steps) # height, speed, time of satellite passover -> these are all similar to  GRACE-FO
 
 #sat_LEO_max = Satellite(1500e3, 7.1e3, 60*18) # height, speed, time of satellite passover
 # V(0) = 10 # m/s Ground wind speed ([1] suggests 10, 21, 30), C2n(0) = 1.7e-14 # Andrews, 2009: Near-ground vertical profile of refractive-index fluctuations (C2n(0)) ([1] suggests 1.7*10^-13 or 1.7*10^-14)
-alice = Receiver(-ground_station_seperation/(2*earth_radius), V_0=10, C2n_0=1e-14) # these values are used in other satellite paper (Wang I think)
-bob = Receiver(ground_station_seperation/(2*earth_radius), V_0=10, C2n_0=1e-14)
 quantum_laser = Laser(1550.12e-9) # quantum laser wavelength from [5]
 reference_laser = Laser(1548.51e-9) # reference laser wavelength from [5]
 
@@ -204,122 +197,200 @@ total_figures = 1
 # --------------------------------------------------------------------- Simulations ---------------------------------------------------------------------
 
 def generate_phase_time_plot():
+    # ------------------ Set up stuff ------------------
     global total_figures
-    #sat_used = sat_LEO_current # this is an object of type Satellite
-    max_time = 1 # for our instance, if we imagine integration times of n seconds, we integrate between 1/n to infinity 
-    max_freq_simulated = 1e10 # (where infinity above must be bound here to some large value, which hopefully converges)
-    # possibly upper bound will be limited by sampling frequency of device we are doing, with worst case scenario upper bound of freq of light (~10^14)
-    freq_space = np.logspace(np.log10(1/max_time), np.log10(max_freq_simulated), no_freq_steps) # note, bound this by the limits of the integral
+    #max_time = 1 # for our instance, if we imagine integration times of n seconds, we integrate between 1/n to infinity 
     
-    # ------------------ Laser stuff ------------------ Information from Bertaina paper [2]
-    # Cavity PSD
-    c4, c3, c2 = 0.5, 0, 2e-3
-    S_cavity = (c4/freq_space**4+c3/freq_space**3+c2/freq_space**2)[None, :] # not sure yet - note that this does not converge, so if we add more freq integral, number gets bigger
-    # Free running laser and stabilised laser PSD
-    B, gamma, delta = laser_stab_bandwidth, 0.1, 10 # B is laser stab bandwidth
-    G_0 = (2*np.pi*B)**2 * (1+delta)/(1+gamma)
-    G_f = G_0*(1/(2*np.pi*1j*freq_space)**2)*(1j*freq_space+B*gamma)/(1j*freq_space+B*delta)
-    r3, r2, fc = 3e6, 3e2, 2e6
-    S_laser_free = (r3/(freq_space**3)) + (r2/(freq_space**2)) * (fc/(freq_space+fc))**2
-    S_laser_stab = S_cavity + np.abs(1/(1-G_f))**2 * S_laser_free
-    
-    sat_list = [sat_LEO_low, sat_LEO_high]#, sat_MEO_low, sat_MEO_high]
-    sat_name_list = ['LEO low', 'LEO high']#, 'MEO low', 'MEO high']
-    S_outputs, sat_times, tot_error_outputs, laser_error_outputs, atmosphere_error_outputs = [], [], [], [], [] # defining some arrays
-    
-    loop_index = 0
-    for sat_used in sat_list:
-        # ------------------ Comms stuff ------------------ 
-        # from here has the potential of being looped
-        to_A = Communication(sat_used, alice, quantum_laser, max_uninterrupt_time=max_time, freq_range=freq_space, steps=steps_array)
-        to_B = Communication(sat_used, bob, quantum_laser, max_uninterrupt_time=max_time, freq_range=freq_space, steps=steps_array)
+    max_time_array = [0.01, 0.05, 0.1, 1, 10]
+    seperation_array = [1000e3, 1500e3, 2000e3]
+    sat_array = [500e3, 2000e3, 10e6] #sat_LEO_low, sat_LEO_high, sat_MEO_low]#, sat_MEO_low, sat_MEO_high]
+    sat_name_list = ['LEO low', 'LEO high', 'MEO low']#, 'MEO low', 'MEO high']
         
-        S_AC, S_BC = to_A.generateSim(), to_B.generateSim()
-        
-        #link_noise = np.maximum(S_AC, S_BC) # characteristic noise of the link
-        S_link = S_AC+S_BC # more conservative estimate for S_link
-        phase_stab_noise_floor = (reference_laser.wavelength - quantum_laser.wavelength)**2 / quantum_laser.wavelength**2 * (S_link) / freq_space**2
-        
-        # Path difference and PSD contribution from the laser
-        delta_L = alice.dist2sat(sat_used) - bob.dist2sat(sat_used)
-        S_contrib_laser = np.sin(2*np.pi*freq_space*refractive_index*delta_L[:, None]/speed_of_light)**2 * S_laser_stab
-
-        # Phase variance without stabilisation (this value is normally unreasonable)
-        phase_var_tot = np.trapz(S_link*4+S_contrib_laser*4, freq_space, axis=1) # this is directly from [2] then + 4sin^2(2*pi*f*n*delta_L/c)*ref_laser_noise where delta_L path mismatch abs(AC-BC), n is refractive index
-        error = phase_var_tot / 4  # this is QKD QBER from [4]
-
-        # Phase stabilisation transfer function
-        bandwidth_freq = phase_stab_bandwidth # phase stab bandwidth 100kHz to 1MHz bandwidth -> takes over laser when less than 1e5, similar to laser at 1e5, dissapears at 1e6 compared to laser (for low LEO)
-        phase_stab_transfer_func = 1/(1-1j*bandwidth_freq/freq_space) #G = 2 * np.pi * bandwidth_freq, omega = 2 * np.pi * freq_space, GOL = -1j * G / omega, transfer_func = 1/(1+GOL)
-        S_link_phase_stable = np.maximum(S_link*(np.abs(phase_stab_transfer_func)**2), phase_stab_noise_floor)
-        
-        # Phase variance with stabilisation (our actual output)
-        S_tot = S_link_phase_stable*4+S_contrib_laser*4
-        phase_var_phase_stable = np.trapz(S_tot, freq_space, axis=1)    
-        error_phase_stable = phase_var_phase_stable / 4  # this is QKD QBER from [4]
-        
-        # Seperate components
-        laser_error = np.trapz(S_contrib_laser*4, freq_space, axis=1) / 4
-        atmosphere_error = np.trapz(S_link_phase_stable*4, freq_space, axis=1) / 4 
-        
-
-        S_outputs.append(S_tot)
-        laser_error_outputs.append(laser_error)
-        atmosphere_error_outputs.append(atmosphere_error)
-        tot_error_outputs.append(error_phase_stable)
-        sat_times.append(sat_used.time_array/sat_used.time)
-    
-        if plot_PSDs:
-            plt.figure(total_figures, figsize=(7,7))
-            total_figures += 1
-            plt.plot(freq_space, S_AC[0])
-            #plt.plot(freq_space, S_AC[10])
-            #plt.plot(freq_space, S_AC[50])
-            #plt.plot(freq_space, S_AC[99])
-            plt.plot(freq_space, phase_stab_noise_floor[0])
-            plt.plot(freq_space, S_link_phase_stable[0])
-            plt.plot(freq_space, S_laser_free)
-            plt.plot(freq_space, S_laser_stab[0])
-            plt.plot(freq_space, S_tot[0])
-        
-            plt.xscale('log')
-            plt.yscale('log')
-            plt.xlabel('Frequency (Hz)')
-            plt.ylabel('Phase noise (rad^2/Hz)')
-            plt.title('Phase PSD at start for {}'.format(sat_name_list[loop_index]))
-            plt.legend(['A to C', 'Stab noise floor', 'A to C stabilised', 'Laser Free', 'Laser Stable', 'Total']) #
-            plt.grid()
-        loop_index += 1
-
-    #plt.legend(sat_name_list)
-    
-        
-    #print("No Phase Stab Mean: {:.2f}\nPhase Stab Mean: {:.2f}".format(np.average(error*100), np.average(error_phase_stable*100)))
-    plt.figure(total_figures)
+    #plt.figure(total_figures)
+    fig, axs = plt.subplots(3, 3, sharex=False, sharey='row')
     total_figures += 1
-    for i in range(len(tot_error_outputs)):
-        plt.plot(sat_times[i], tot_error_outputs[i]*100) 
-        plt.plot(sat_times[i], laser_error_outputs[i]*100)
-        plt.plot(sat_times[i], atmosphere_error_outputs[i]*100)
-    plt.title("QBER vs Time for integration period {}s w/ max freq {:.1E}Hz\n(tstep={}, fstep={}, lstep={})".format(to_A.max_uninterrupt_time, max_freq_simulated, no_time_steps, no_freq_steps, no_length_steps)) # Phase Noise @ 1Hz vs Time
-    plt.xlabel("Time (s)") # Time (s) / Freq (Hz)
-    plt.ylabel("QBER (%)") # Phase Noise @ 1 Hz (rad^2)
+    fig.suptitle('QBER vs Time')
+    #fig.supxlabel("Normalised passover time") # Time (s) / Freq (Hz)
+    #fig.supylabel("QBER (%)", va='bottom', ha='center') # Phase Noise @ 1 Hz (rad^2)
     
     legend_list = []
-    for sat_name in sat_name_list:
-        legend_list.append(sat_name + ' total')
-        legend_list.append(sat_name + ' laser')
-        legend_list.append(sat_name + ' atmos')
-    plt.legend(legend_list)
-    # ax.set_ylim(0, 11), fig.set_size_inches(9, 6)
+    for i in range(3): #len(max_time_array)):
+        legend_list.append('$\\tau_i$={:.2f}s stable'.format(max_time_array[i]))
+        #legend_list.append('$\\tau_i$={:.2f}s unstable'.format(max_time))
     
-    end = time.time()
-    print("Code took {:.2f}s".format(end-start))
+    for sep_index in range(len(seperation_array)):
+        for sat_index in range(len(sat_array)):
+            S_outputs, sat_times, tot_error_outputs, laser_error_outputs, atmosphere_error_outputs, tot_unstable_error_outputs = [], [], [], [], [], [] # defining some arrays
+            for time_index in range(len(max_time_array)):
+                ground_station_seperation = seperation_array[sep_index]
+                sat_used = Satellite(sat_array[sat_index], ground_station_seperation, 17*np.pi/36, no_time_steps)
+                max_time = max_time_array[time_index]
+                alice = Receiver(-ground_station_seperation/(2*earth_radius), V_0=10, C2n_0=1e-14) # these values are used in other satellite paper (Wang I think)
+                bob = Receiver(ground_station_seperation/(2*earth_radius), V_0=10, C2n_0=1e-14)
+
+        
+                max_freq_simulated = 1e10 # (where infinity above must be bound here to some large value, which hopefully converges)
+                # possibly upper bound will be limited by sampling frequency of device we are doing, with worst case scenario upper bound of freq of light (~10^14)
+                freq_space = np.logspace(np.log10(1/max_time), np.log10(max_freq_simulated), no_freq_steps) # note, bound this by the limits of the integral
+                multiplication_factor = 4 # from Bertania, this will be different for free space probably but still a constant integer probably
+                
+                # ------------------ Laser stuff ------------------ Information from Bertaina paper [2]
+                # Cavity PSD
+                c4, c3, c2 = 0.5, 0, 2e-3
+                S_cavity = (c4/freq_space**4+c3/freq_space**3+c2/freq_space**2)[None, :] # not sure yet - note that this does not converge, so if we add more freq integral, number gets bigger
+                
+                # Free running laser and stabilised laser PSD
+                B, gamma, delta = laser_stab_bandwidth, 0.1, 10 # B is laser stab bandwidth
+                G_0 = (2*np.pi*B)**2 * (1+delta)/(1+gamma)
+                G_f = G_0*(1/(2*np.pi*1j*freq_space)**2)*(1j*freq_space+B*gamma)/(1j*freq_space+B*delta)
+                r3, r2, fc = 3e6, 3e2, 2e6
+                S_laser_free = (r3/(freq_space**3)) + (r2/(freq_space**2)) * (fc/(freq_space+fc))**2
+                S_laser_stab = S_cavity + np.abs(1/(1-G_f))**2 * S_laser_free
+                
+                
+                # ------------------ Comms stuff ------------------ 
+                # from here has the potential of being looped
+                to_A = Communication(sat_used, alice, quantum_laser, max_uninterrupt_time=max_time, freq_range=freq_space, steps=steps_array)
+                to_B = Communication(sat_used, bob, quantum_laser, max_uninterrupt_time=max_time, freq_range=freq_space, steps=steps_array)
+                
+                S_AC, S_BC = to_A.generateSim(), to_B.generateSim()
+                
+                #link_noise = np.maximum(S_AC, S_BC) # characteristic noise of the link
+                S_link = S_AC+S_BC # more conservative estimate for S_link
+                phase_stab_noise_floor = (reference_laser.wavelength - quantum_laser.wavelength)**2 / quantum_laser.wavelength**2 * (S_link) / freq_space**2
+                
+                # Path difference and PSD contribution from the laser
+                delta_L = alice.dist2sat(sat_used) - bob.dist2sat(sat_used)
+                S_contrib_laser = np.sin(2*np.pi*freq_space*refractive_index*delta_L[:, None]/speed_of_light)**2 * S_laser_stab
+
+                # Phase variance without stabilisation (this value is normally unreasonable)
+                S_tot_unstable = S_link*multiplication_factor+S_contrib_laser*multiplication_factor
+                phase_var_tot_unstable = np.trapz(S_tot_unstable, freq_space, axis=1) # this is directly from [2] then + 4sin^2(2*pi*f*n*delta_L/c)*ref_laser_noise where delta_L path mismatch abs(AC-BC), n is refractive index
+                error_unstable = phase_var_tot_unstable / 4  # this is QKD QBER from [4]
+
+                # Phase stabilisation transfer function
+                bandwidth_freq = phase_stab_bandwidth # phase stab bandwidth 100kHz to 1MHz bandwidth -> takes over laser when less than 1e5, similar to laser at 1e5, dissapears at 1e6 compared to laser (for low LEO)
+                phase_stab_transfer_func = 1/(1-1j*bandwidth_freq/freq_space) #G = 2 * np.pi * bandwidth_freq, omega = 2 * np.pi * freq_space, GOL = -1j * G / omega, transfer_func = 1/(1+GOL)
+                S_link_phase_stable = np.maximum(S_link*(np.abs(phase_stab_transfer_func)**2), phase_stab_noise_floor)
+                
+                # Phase variance with stabilisation (our actual output)
+                S_tot = S_link_phase_stable*multiplication_factor+S_contrib_laser*multiplication_factor
+                phase_var_phase_stable = np.trapz(S_tot, freq_space, axis=1)
+                
+                if (sep_index == 0) and (sat_index == 0) and (time_index == (len(max_time_array)-1)):
+                    min_freq_arr = np.logspace(-1,6,100)
+                    #print(min_freq_arr)
+                    phase_var_unstable_at_freq = []
+                    phase_var_phase_stable_at_freq = []
+                    for min_freq in min_freq_arr:
+                        freq_space_inst = np.where(freq_space >= min_freq, freq_space, 0)
+                        phase_var_unstable_at_freq.append(np.mean(np.trapz(S_tot_unstable, freq_space_inst, axis=1)))
+                        phase_var_phase_stable_at_freq.append(np.mean(np.trapz(S_tot, freq_space_inst, axis=1)))
+                    
+                    plt.figure(total_figures)
+                    total_figures += 1
+                    plt.plot(1/min_freq_arr, phase_var_unstable_at_freq)
+                    plt.plot(1/min_freq_arr, phase_var_phase_stable_at_freq)
+                    plt.legend(['Unstable', 'Stable'])
+                    plt.yscale('log')
+                    plt.xscale('log')
+                    plt.ylim(0,200)
+                    plt.xlim(1e-6,4)
+                    plt.ylabel('Phase noise $\\sigma_\\phi^2$ (rad$^2$)')
+                    plt.xlabel('Integration time (s)')
+                    plt.title('Phase noise vs Integration time')
+                    
+                    plt.figure(total_figures)
+                    total_figures += 1
+                    plt.plot(1/min_freq_arr, np.array(phase_var_unstable_at_freq)*25)
+                    plt.plot(1/min_freq_arr, np.array(phase_var_phase_stable_at_freq)*25)
+                    plt.legend(['Unstable', 'Stable'])
+                    plt.yscale('log')
+                    plt.xscale('log')
+                    plt.ylim(0,50)
+                    plt.xlim(1e-6,4)
+                    plt.ylabel('QBER (%)')
+                    plt.xlabel('Integration time (s)')
+                    plt.title('QBER vs Integration time')
+                        
+                error_phase_stable = phase_var_phase_stable / 4  # this is QKD QBER from [4]
+                
+                # Seperate components
+                laser_error = np.trapz(S_contrib_laser*multiplication_factor, freq_space, axis=1) / 4
+                atmosphere_error = np.trapz(S_link_phase_stable*multiplication_factor, freq_space, axis=1) / 4 
+                
+                S_outputs.append(S_tot)
+                laser_error_outputs.append(laser_error)
+                atmosphere_error_outputs.append(atmosphere_error)
+                tot_unstable_error_outputs.append(error_unstable)
+                tot_error_outputs.append(error_phase_stable)
+                sat_times.append(sat_used.time_array)
+            
+                if plot_PSDs and (time_index == (len(max_time_array)-1)):
+                    plt.figure(total_figures, figsize=(7,7))
+                    total_figures += 1
+                    plt.plot(freq_space, S_AC[0])
+                    plt.plot(freq_space, phase_stab_noise_floor[0])
+                    plt.plot(freq_space, S_link_phase_stable[0])
+                    plt.plot(freq_space, S_laser_free)
+                    plt.plot(freq_space, S_laser_stab[0])
+                    plt.plot(freq_space, S_tot[0])
+                
+                    plt.xscale('log')
+                    plt.yscale('log')
+                    plt.xlabel('Frequency (Hz)')
+                    plt.ylabel('Phase noise (rad$^2$/Hz)')
+                    plt.ylim(1e-20, 1e4)
+                    plt.title('Phase PSD at start for {} with {:.0f}km sep'.format(sat_name_list[sat_index], ground_station_seperation/1000))
+                    plt.legend(['A to C', 'Stab noise floor', 'A to C stabilised', 'Laser Free', 'Laser Stable', 'Total']) #
+                    plt.grid()
+                        
+            #print("No Phase Stab Mean: {:.2f}\nPhase Stab Mean: {:.2f}".format(np.average(error*100), np.average(error_phase_stable*100)))
+            ax = axs[sat_index][sep_index]
+            for i in range(3): #len(tot_error_outputs)):
+                plot_output = tot_error_outputs[i][1:-1]*100 #np.where(tot_error_outputs[i][:-1] < 1, tot_error_outputs[i][:-1]*100, 100)
+                ax.plot(sat_times[i][1:-1], plot_output)
+                #ax.plot(sat_times[i][:-1], tot_unstable_error_outputs[i][:-1]*100) # for plotting unstable stuff
+                #plt.plot(sat_times[i], laser_error_outputs[i]*100) # for splitting into laser and atmospheric components
+                #plt.plot(sat_times[i], atmosphere_error_outputs[i]*100)
+            #plt.title("QBER vs Time for integration period {}s w/ max freq {:.1E}Hz\n(tstep={}, fstep={}, lstep={})".format(to_A.max_uninterrupt_time, max_freq_simulated, no_time_steps, no_freq_steps, no_length_steps)) # Phase Noise @ 1Hz vs Time
+            
+            #ax.set_ylim(2e-2,1e2)
+            #ax.set_yscale('log')
+            if sep_index == 2:
+                ax.yaxis.set_label_position("right")
+                ax.set_ylabel("{} ({:.0f}km)".format(sat_name_list[sat_index], sat_used.height/1000), fontsize=14)
+            
+            if sat_index == 0:
+                ax.set_title("{:.0f}km seperation".format(ground_station_seperation/1000))
+                #ax.set_yticks([0.2, 0.4, 0.6, 0.8, 1, 1.2])
+            elif sat_index == 1:
+                #ax.set_ylim(0,0.2)
+                #ax.set_yticks([0.02, 0.05, 0.08, 0.11, 0.14, 0.17])
+                if sep_index == 0:
+                    ax.set_ylabel("QBER (%)")
+            elif sat_index == 2:
+                #ax.set_ylim(0,0.2)
+                #ax.set_yticks([0.02, 0.05, 0.08, 0.11, 0.14, 0.17])
+                if sep_index == 1:
+                    ax.set_xlabel("Time (s)")
+            # ax.set_ylim(0, 11), fig.set_size_inches(9, 6)
+            
+            end = time.time()
+            print("Time of {:.0f}km satellite passover for {:.0f}km seperation: {}s".format(sat_used.height/1000, ground_station_seperation/1000, sat_used.time))
+            print("Satellite speed: {}km/s, {}rad/s".format(sat_used.speed_m/1000, sat_used.speed))
+            print("Code took {:.2f}s".format(end-start))
+            
+    fig.legend(legend_list, loc='upper right', title="Integration time")
+    #plt.subplots_adjust(wspace=0.05, hspace=0.05)
     
-    plt.show()
 
 def generate_visual_plot():
-    sat_used = sat_LEO_low
+    ground_station_seperation = 2000e3
+    alice = Receiver(-ground_station_seperation/(2*earth_radius), V_0=10, C2n_0=1e-14) # these values are used in other satellite paper (Wang I think)
+    bob = Receiver(ground_station_seperation/(2*earth_radius), V_0=10, C2n_0=1e-14)
+
+    #sat_used = sat_LEO_low
     fig, ax = plt.subplots()
     divisor = 1000
     # Tangent lines r_A_perp, a_A_perp, r_B_perp, a_B_perp = radial_tangent(alice.radius, alice.angle), radial_tangent(bob.radius, bob.angle)
@@ -352,6 +423,7 @@ start = time.time()
 #generate_visual_plot()
 generate_phase_time_plot()
 
+plt.show()
 
 
 '''

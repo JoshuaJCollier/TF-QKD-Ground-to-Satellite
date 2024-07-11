@@ -33,14 +33,20 @@ class Laser():
         self.frequency = speed_of_light/self.wavelength # freq of light (Hz)
 
 class Satellite():
-    def __init__(self, height: float, speed: float, time: float, no_time_steps):
+    def __init__(self, height: float, ground_sep: float, max_angle: float, no_time_steps):
         self.height = height
-        self.speed = speed
-        self.time = time
+        #self.speed = speed
+        #self.time = time
+        offset_sep_angle = ground_sep/(2*earth_radius) # angle in radians
+        rec_to_sat_angle = max_angle - np.arcsin(earth_radius/(earth_radius+height)*np.sin(np.pi-max_angle))
+        total_arc = 2*(rec_to_sat_angle - offset_sep_angle)
+        self.speed_m = np.sqrt(6.673e-11*5.98e24/(earth_radius+height)) # sqrt(G*M_E/(R_sat)) in meters/second
+        self.speed = self.speed_m/((earth_radius+height)) # speed in rad/s 
+        self.time = total_arc/self.speed
         self.no_time_steps = no_time_steps
         self.time_array = np.linspace(0, self.time, no_time_steps)
         self.radius = self.height + earth_radius
-        self.angle = np.sqrt(9.8/(earth_radius+self.height)) * (self.time_array-self.time/2)
+        self.angle = self.speed * (self.time_array-self.time/2)
         #self.speed/self.radius * (self.time_array-self.time/2)
         self.x, self.y = TrigFuncs.pol2cart(self.radius, self.angle) # x and y coordiantes during a timesweep
 
