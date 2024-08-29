@@ -15,7 +15,7 @@ from matplotlib import rc
 #rc('text', usetex=True)
 
 plt.rcParams['font.family'] = 'serif'
-plt.rcParams['font.size'] = 14 # 14 for figure 2, 18 for figure 3, 
+plt.rcParams['font.size'] = 20 # 14 for figure 2, 18 for figure 3, 
 
 # ----------------------------------------------------------------- Functions / Classes -----------------------------------------------------------------
 
@@ -165,28 +165,28 @@ class Communication():
 # ---------------------------------------------------------------------- Constants ----------------------------------------------------------------------
 
 # Dimensionality of arrays:
-no_time_steps = 1001
-no_freq_steps = 1000
-no_length_steps = 1000
+no_time_steps = 11
+no_freq_steps = 100000
+no_length_steps = 100000
 no_q_steps = 1
 steps_array = [no_time_steps, no_freq_steps, no_length_steps, no_q_steps]
 #print("Max array data size: {:.2f}GB".format(no_time_steps*no_length_steps*no_freq_steps*no_q_steps*8/(1024**3)))
 plot_atmos = False
-plot_PSDs = False
-plot_qber = True
-#plot_all_on_one = False
+plot_PSDs = True
+plot_qber = False
+
 earth_radius = 6371e3 # radius of earth (m)
 speed_of_light = 2.99792458*1e8 # (m/s)
 refractive_index = 1.00027 # refractive index of the atmosphere, this can probably be changed over distance but also small, will make less than 0.03% diff
+max_freq_simulated = 1e9 # (where infinity above must be bound here to some large value, which hopefully converges)
+multiplication_factor = 4 # conservative estimate from Bertania
+phase_stab_bandwidth = 1e5
 
 #sat_LEO_max = Satellite(1500e3, 7.1e3, 60*18) # height, speed, time of satellite passover
 # V(0) = 10 # m/s Ground wind speed ([1] suggests 10, 21, 30), C2n(0) = 1.7e-14 # Andrews, 2009: Near-ground vertical profile of refractive-index fluctuations (C2n(0)) ([1] suggests 1.7*10^-13 or 1.7*10^-14)
 quantum_laser = Laser(1550.12e-9) # quantum laser wavelength from [5]
 reference_laser = Laser(1548.51e-9) # reference laser wavelength from [5]
 
-# IMPORTANT INPUT PARAMETERS
-phase_stab_bandwidth = 1e5
-laser_stab_bandwidth = 3e5
 
 total_figures = 1
 # --------------------------------------------------------------------- Simulations ---------------------------------------------------------------------
@@ -216,6 +216,7 @@ def generate_phase_time_plot():
         legend_list.append('$\\tau_i$={:.2f}s stable'.format(max_time_array[i]))
     
     print('Starting...')
+    
     for sep_index in range(len(seperation_array)):
         axs[sep_index][0].set_yticks([0.0, 0.5, 1.0, 1.5])
         axs[sep_index][0].set_ylim([0.0, 1.5])
@@ -225,47 +226,29 @@ def generate_phase_time_plot():
             for time_index in range(len(max_time_array)):
                 ground_station_seperation = seperation_array[sep_index]
                 sat_used = Satellite(sat_array[sat_index], ground_station_seperation, 17*np.pi/36, no_time_steps)
-                max_time = max_time_array[time_index]
                 alice = Receiver(-ground_station_seperation/(2*earth_radius), V_0=10, C2n_0=1e-14) # these values are used in other satellite paper (Wang I think)
                 bob = Receiver(ground_station_seperation/(2*earth_radius), V_0=10, C2n_0=1e-14)
 
-                max_freq_simulated = 1e9 # (where infinity above must be bound here to some large value, which hopefully converges)
+                max_time = max_time_array[time_index]
                 freq_space = np.logspace(np.log10(1/max_time), np.log10(max_freq_simulated), no_freq_steps) # note, bound this by the limits of the integral
-                multiplication_factor = 4 # conservative estimate from Bertania
                 
-                # ------------------ Laser stuff ------------------ Information from Bertaina paper [2]
-                # Cavity PSD
-                c4, c3, c2 = 0.5, 0, 2e-3
-                S_cavity = (c4/freq_space**4+c3/freq_space**3+c2/freq_space**2)[None, :] # not sure yet
-                
-                # Free running laser and stabilised laser PSD
-                B, gamma, delta = laser_stab_bandwidth, 0.1, 10 # B is laser stab bandwidth
-                G_0 = (2*np.pi*B)**2 * (1+delta)/(1+gamma)
-                G_f = G_0*(1/(2*np.pi*1j*freq_space)**2)*(1j*freq_space+B*gamma)/(1j*freq_space+B*delta)
-                r3, r2, fc = 3e6, 3e2, 2e6
-                S_laser_free = (r3/(freq_space**3)) + (r2/(freq_space**2)) * (fc/(freq_space+fc))**2
-                S_laser_stab_old = S_cavity + np.abs(1/(1-G_f))**2 * S_laser_free
-                
+                # ------------------ Laser stuff ------------------ Information from Rees paper [?]
                 # NEW LASER STABILISED FROM GRACE-FO DATA
                 log_f = np.log10(freq_space)                
                 grace_FO_rees2021 = 0.001*log_f**5 + 0.0046*log_f**4 - 0.0422*log_f**3 - 0.0683*log_f**2 - 1.4827*log_f + 0.3217
                 S_laser_stab = [np.where(freq_space < 10, 10**grace_FO_rees2021, 0.0542*10**1/freq_space**1)**2]
-                #plot_x_y(freq_space, [S_laser_stab_old[0], S_laser_stab[0]], 'log', 'log')
-                
+    
                 # ------------------ Comms stuff ------------------ 
-                # from here has the potential of being looped
                 to_A = Communication(sat_used, alice, quantum_laser, max_uninterrupt_time=max_time, freq_range=freq_space, steps=steps_array)
                 to_B = Communication(sat_used, bob, quantum_laser, max_uninterrupt_time=max_time, freq_range=freq_space, steps=steps_array)
                 
                 S_AC, S_BC = to_A.generateSim(), to_B.generateSim()
                 
-                #link_noise = np.maximum(S_AC, S_BC) # characteristic noise of the link
                 S_link = S_AC+S_BC # more conservative estimate for S_link
                 phase_stab_noise_floor = (reference_laser.wavelength - quantum_laser.wavelength)**2 / quantum_laser.wavelength**2 * (S_link) / freq_space**2
                 
                 # Path difference and PSD contribution from the laser
                 delta_L = np.abs(alice.dist2sat(sat_used) - bob.dist2sat(sat_used))
-                #delta_L = delta_L*0
                 S_contrib_laser = np.sin(2*np.pi*freq_space*refractive_index*delta_L[:, None]/speed_of_light)**2 * S_laser_stab
                 
                 # Phase variance without stabilisation (this value is normally unreasonable)
@@ -274,7 +257,7 @@ def generate_phase_time_plot():
                 error_unstable = phase_var_tot_unstable / 4  # this is QKD QBER from [4]
 
                 # Phase stabilisation transfer function
-                bandwidth_freq = phase_stab_bandwidth # phase stab bandwidth 100kHz to 1MHz bandwidth -> takes over laser when less than 1e5, similar to laser at 1e5, dissapears at 1e6 compared to laser (for low LEO)
+                bandwidth_freq = phase_stab_bandwidth # phase stab bandwidth 100kHz to 1MHz bandwidth
                 phase_stab_transfer_func = 1/(1-1j*bandwidth_freq/freq_space) #G = 2 * np.pi * bandwidth_freq, omega = 2 * np.pi * freq_space, GOL = -1j * G / omega, transfer_func = 1/(1+GOL)
                 S_link_phase_stable = np.maximum(S_link*(np.abs(phase_stab_transfer_func)**2), phase_stab_noise_floor)
                 
@@ -283,8 +266,7 @@ def generate_phase_time_plot():
                 phase_var_phase_stable = np.trapz(S_tot, freq_space, axis=1)
                 
                 if ((sep_index == 0) and (sat_index == 0) and (time_index == (len(max_time_array)-1))) and plot_qber:
-                    min_freq_arr = np.logspace(-1,6,100)
-                    #print(min_freq_arr)
+                    min_freq_arr = np.logspace(-1,6,1000)
                     phase_var_unstable_at_freq = []
                     phase_var_phase_stable_at_freq = []
                     phase_var_laser_at_freq = []
@@ -449,6 +431,7 @@ References:
 [3] Optical timing jitter due to atmospheric turbulence: comparison of frequency comb measurements to predictions from micrometeorological sensors. Cladwell, 2020
 [4] Coherent phase transfer for real-world twin-ﬁeld quantum key distribution. Clivati, 2022
 [5] 600-km repeater-like quantum commuinications with dual-band stabilization. Pitaluga, 2021
+[6] GRACE-FO one Rees, 20??
 '''
 
 
