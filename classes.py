@@ -1,8 +1,24 @@
 import numpy as np
+import matplotlib.pyplot as plt
 
 earth_radius = 6371e3 # radius of earth (m)
 speed_of_light = 2.99792458*1e8 # (m/s)
 
+def plot_x_y(x, y_list, xscale='linear', yscale='linear', xaxis='x', yaxis='y'):
+    """ Just quick plotting tool for debugging.
+    """
+    fig, ax = plt.subplots()
+    for y in y_list:
+        plt.plot(x, y)
+    ax.set_yscale(yscale)
+    ax.set_xscale(xscale)
+    ax.set_title("{} vs {}".format(yaxis, xaxis))
+    ax.set_xlabel(xaxis)
+    ax.set_ylabel(yaxis)
+    plt.show()
+    input('Press enter to continue...')
+    plt.close()
+    
 class TrigFuncs():
     def pol2cart(rho, phi):
         x = rho * np.cos(phi)
